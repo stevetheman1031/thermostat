@@ -1,0 +1,84 @@
+blueprint:
+  name: Thermostat Temperature Control
+  description: Create automations to control the temperature of your thermostat based on occupancy.
+  domain: automation
+  input:
+    thermostat_entity:
+      name: Thermostat Entity
+      description: The entity ID of your thermostat.
+      selector:
+        entity:
+          domain: climate
+    device_tracker_entity:
+      name: Device Tracker Entity
+      description: The entity ID of the device tracker to monitor for occupancy.
+      selector:
+        entity:
+          domain: device_tracker
+    temperature_home:
+      name: Home Temperature
+      description: The temperature to set your thermostat to when someone is home.
+      default: 76
+      selector:
+        number:
+          min: 60
+          max: 90
+          step: 1
+    temperature_away:
+      name: Away Temperature
+      description: The temperature to set your thermostat to when no one is home.
+      default: 80
+      selector:
+        number:
+          min: 60
+          max: 90
+          step: 1
+    delay_time:
+      name: Delay Time
+      description: The amount of time to wait before setting the thermostat to the Away Temperature when no one is home.
+      default: '00:30:00'
+      selector:
+        time: {}
+
+trigger:
+  platform: homeassistant
+  event: start
+
+variables:
+  thermostat_entity: !input 'thermostat_entity'
+  device_tracker_entity: !input 'device_tracker_entity'
+  temperature_home: !input 'temperature_home'
+  temperature_away: !input 'temperature_away'
+  delay_time: !input 'delay_time'
+
+action:
+  - service: automation.turn_off
+    target:
+      entity_id: !input 'automation_entities'
+
+  - variables:
+      state_device: >
+        {{ state_attr(device_tracker_entity, 'state') }}
+
+  - choose:
+      - conditions:
+          - "{{ state_device == 'home' }}"
+        sequence:
+          - service: climate.set_temperature
+            target:
+              entity_id: "{{ thermostat_entity }}"
+            data:
+              temperature: "{{ temperature_home }}"
+      - conditions:
+          - "{{ state_device == 'not_home' }}"
+        sequence:
+          - wait_for_trigger:
+              - platform: state
+                entity_id: "{{ device_tracker_entity }}"
+                to: 'not_home'
+                for: "{{ delay_time }}"
+          - service: climate.set_temperature
+            target:
+              entity_id: "{{ thermostat_entity }}"
+            data:
+              temperature: "{{ temperature_away }}"
