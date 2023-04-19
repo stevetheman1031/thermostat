@@ -1,84 +1,80 @@
 blueprint:
-  name: Thermostat Temperature Control
-  description: Create automations to control the temperature of your thermostat based on occupancy.
+  name: Set Thermostat Temperature Based on Presence
+  description: >
+    This blueprint sets the temperature of a thermostat based on the presence
+    of people in the house.
   domain: automation
   input:
     thermostat_entity:
-      name: Thermostat Entity
-      description: The entity ID of your thermostat.
+      name: Thermostat entity
+      description: The entity_id of the thermostat to control.
       selector:
         entity:
           domain: climate
-    device_tracker_entity:
-      name: Device Tracker Entity
-      description: The entity ID of the device tracker to monitor for occupancy.
-      selector:
-        entity:
-          domain: device_tracker
     temperature_home:
-      name: Home Temperature
-      description: The temperature to set your thermostat to when someone is home.
+      name: Temperature when home (in Fahrenheit)
+      description: The temperature to set the thermostat to when someone is home.
       default: 76
       selector:
         number:
-          min: 60
+          min: 50
           max: 90
-          step: 1
+          unit_of_measurement: "°F"
+          mode: slider
     temperature_away:
-      name: Away Temperature
-      description: The temperature to set your thermostat to when no one is home.
+      name: Temperature when away (in Fahrenheit)
+      description: The temperature to set the thermostat to when no one is home.
       default: 80
       selector:
         number:
-          min: 60
+          min: 50
           max: 90
-          step: 1
-    delay_time:
-      name: Delay Time
-      description: The amount of time to wait before setting the thermostat to the Away Temperature when no one is home.
-      default: '00:30:00'
+          unit_of_measurement: "°F"
+          mode: slider
+    proximity_sensor_entity:
+      name: Proximity sensor entity
+      description: The entity_id of the proximity sensor to detect presence.
       selector:
-        time: {}
+        entity:
+          domain: binary_sensor
+          device_class: proximity
 
-trigger:
-  platform: homeassistant
-  event: start
+  trigger:
+    - platform: state
+      entity_id: !input proximity_sensor_entity
+      from: "off"
+      to: "on"
+    - platform: state
+      entity_id: !input proximity_sensor_entity
+      from: "on"
+      to: "off"
 
-variables:
-  thermostat_entity: !input 'thermostat_entity'
-  device_tracker_entity: !input 'device_tracker_entity'
-  temperature_home: !input 'temperature_home'
-  temperature_away: !input 'temperature_away'
-  delay_time: !input 'delay_time'
-
-action:
-  - service: automation.turn_off
-    target:
-      entity_id: !input 'automation_entities'
-
-  - variables:
-      state_device: >
-        {{ state_attr(device_tracker_entity, 'state') }}
-
-  - choose:
-      - conditions:
-          - "{{ state_device == 'home' }}"
-        sequence:
-          - service: climate.set_temperature
-            target:
-              entity_id: "{{ thermostat_entity }}"
-            data:
-              temperature: "{{ temperature_home }}"
-      - conditions:
-          - "{{ state_device == 'not_home' }}"
-        sequence:
-          - wait_for_trigger:
-              - platform: state
-                entity_id: "{{ device_tracker_entity }}"
-                to: 'not_home'
-                for: "{{ delay_time }}"
-          - service: climate.set_temperature
-            target:
-              entity_id: "{{ thermostat_entity }}"
-            data:
-              temperature: "{{ temperature_away }}"
+  action:
+    - choose:
+        - conditions:
+            - condition: state
+              entity_id: !input proximity_sensor_entity
+              state: "on"
+          sequence:
+            - service: climate.set_temperature
+              data:
+                entity_id: !input thermostat_entity
+                temperature: !input temperature_home
+        - conditions:
+            - condition: state
+              entity_id: !input proximity_sensor_entity
+              state: "off"
+          sequence:
+            - delay: "00:05:00"
+            - condition: state
+              entity_id: !input proximity_sensor_entity
+              state: "off"
+            - service: climate.set_temperature
+              data:
+                entity_id: !input thermostat_entity
+                temperature: !input temperature_away
+      default:
+        - service: climate.set_temperature
+          data:
+            entity_id: !input thermostat_entity
+            temperature: !input temperature_away
